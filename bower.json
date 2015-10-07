@@ -6,7 +6,8 @@
   
   "main": [
     
-    "distribution/backbone-forms.js"
+    "distribution/backbone-forms.js",
+    "distribution/editors/list.js"
     
   ],
   
