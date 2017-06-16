@@ -12,7 +12,7 @@ var Form = Backbone.View.extend({
 
   /**
    * Constructor
-   * 
+   *
    * @param {Object} [options.schema]
    * @param {Backbone.Model} [options.model]
    * @param {Object} [options.data]
@@ -64,18 +64,18 @@ var Form = Backbone.View.extend({
     //Create fields
     var fields = this.fields = {};
 
-    _.each(selectedFields, function(key) {
+    _.each(selectedFields, _.bind(function(key) {
       var fieldSchema = schema[key];
       fields[key] = this.createField(key, fieldSchema);
-    }, this);
+    }, this));
 
     //Create fieldsets
     var fieldsetSchema = options.fieldsets || _.result(this, 'fieldsets') || _.result(this.model, 'fieldsets') || [selectedFields],
         fieldsets = this.fieldsets = [];
 
-    _.each(fieldsetSchema, function(itemSchema) {
+    _.each(fieldsetSchema, _.bind(function(itemSchema) {
       this.fieldsets.push(this.createFieldset(itemSchema));
-    }, this);
+    }, this));
   },
 
   /**
@@ -116,7 +116,7 @@ var Form = Backbone.View.extend({
     } else if (this.data) {
       options.value = this.data[key];
     } else {
-      options.value = null;
+      options.value = undefined;
     }
 
     var field = new this.Field(options);
@@ -235,9 +235,14 @@ var Form = Backbone.View.extend({
 
     //Set the main element
     this.setElement($form);
-    
+
     //Set class
     $form.addClass(this.className);
+
+    //Set attributes
+    if (this.attributes) {
+      $form.attr(this.attributes)
+    }
 
     return this;
   },
@@ -328,7 +333,7 @@ var Form = Backbone.View.extend({
     }, options);
 
     this.model.set(this.getValue(), setOptions);
-    
+
     if (modelError) return modelError;
   },
 
@@ -451,23 +456,22 @@ var Form = Backbone.View.extend({
   }
 
 }, {
+    editors: {}
 
-  //STATICS
-  template: _.template('\
+});
+
+//Statics to add on after Form is declared
+Form.templateSettings = {
+    evaluate: /<%([\s\S]+?)%>/g,
+    interpolate: /<%=([\s\S]+?)%>/g,
+    escape: /<%-([\s\S]+?)%>/g
+};
+
+Form.template = _.template('\
     <form>\
      <div data-fieldsets></div>\
       <% if (submitButton) { %>\
         <button type="submit"><%= submitButton %></button>\
       <% } %>\
     </form>\
-  ', null, this.templateSettings),
-
-  templateSettings: {
-    evaluate: /<%([\s\S]+?)%>/g, 
-    interpolate: /<%=([\s\S]+?)%>/g, 
-    escape: /<%-([\s\S]+?)%>/g
-  },
-
-  editors: {}
-
-});
+  ', null, Form.templateSettings);

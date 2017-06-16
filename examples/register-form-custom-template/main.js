@@ -27,9 +27,19 @@ $(function() {
           'required',
           { type: 'match', field: 'password', message: 'Passwords must match!' }
         ]
-      }
+      },
+      active: {
+        type: 'Checkbox'
+      },
+      languages: {
+        type: 'Checkboxes', options: ['HTML', 'JavaScript', 'CSS']
+      },
+      favourite: {
+        type: 'Radio', options: ['HTML', 'JavaScript', 'CSS']
+      },
+
     }
-    
+
   });
 
   //Create the form instance and add to the page

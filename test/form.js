@@ -13,6 +13,15 @@ module('Form#initialize', {
   }
 });
 
+test('accepts an errorClassName in schema', function() {
+  var form = new Form({
+    schema: {
+      name: {type: 'Text', errorClassName: 'custom-error'}
+    }
+  });
+  same(form.fields.name.errorClassName, 'custom-error')
+});
+
 test('prefers schema from options over model', function() {
   var model = new Backbone.Model();
 
@@ -335,6 +344,111 @@ test('submitButton option: string - creates button with given text', function() 
   same($btn.html(), 'Next');
 });
 
+test('submitButton still rendered properly if _ templateSettings are changed', function() {
+    var oldSettings = _.templateSettings;
+
+    _.templateSettings = {
+        evaluate: /\{\{([\s\S]+?)\}\}/g,
+        interpolate: /\{\{=([\s\S]+?)\}\}/g,
+        escape: /\{\{-([\s\S]+?)\}\}/g
+    };
+
+  var form = new Form({
+    schema: { name: 'Text' },
+    submitButton: 'Next'
+  }).render();
+
+  var $btn = form.$('button[type="submit"]');
+
+  same($btn.length, 1);
+  same($btn.html(), 'Next');
+  notDeepEqual( _.templateSettings, Form.templateSettings, "Template settings should be different");
+
+  _.templateSettings = oldSettings;
+});
+
+test('Uses Backbone.$ not global', function() {
+  var old$ = window.$,
+    exceptionCaught = false;
+
+  window.$ = null;
+
+  try {
+     var form = new Form({
+      schema: { name: 'Text' },
+      submitButton: 'Next'
+    }).render();
+  } catch(e) {
+    exceptionCaught = true;
+  }
+
+  window.$ = old$;
+
+  ok(!exceptionCaught, ' using global \'$\' to render');
+});
+
+
+module('Form#EditorValues');
+
+test('Form with editor with basic schema should return defaultValues', function() {
+  var form = new Form({
+    schema: {
+      name: {
+        type: 'Text'
+      }
+    }
+  }).render();
+
+  same( form.fields.name.editor.value, "" );
+  same( form.getValue(), { name: "" } );
+});
+
+test('Form with model with defaults should return defaults', function() {
+  var model = Backbone.Model.extend({
+    defaults: { name: "Default Name" }
+  });
+  var form = new Form({
+    schema: {
+      name: {
+        type: 'Text'
+      }
+    },
+    model: new model()
+  }).render();
+
+  same( form.fields.name.editor.value, "Default Name" );
+  same( form.getValue(), { name: "Default Name" } );
+});
+
+test('Form with data passed in should return data', function() {
+  var form = new Form({
+    schema: {
+      name: {
+        type: 'Text'
+      }
+    },
+    data: { name: "Default Name" }
+  }).render();
+
+  same( form.fields.name.editor.value, "Default Name" );
+  same( form.getValue(), { name: "Default Name" } );
+});
+
+test('Form should not clobber defaultValue of Editors', function() {
+  Form.editors.DefaultText = Form.editors.Text.extend({
+    defaultValue: "Default Name"
+  });
+  var form = new Form({
+    schema: {
+      name: {
+        type: 'DefaultText'
+      }
+    }
+  }).render();
+
+  same( form.fields.name.editor.value, "Default Name" );
+  same( form.getValue(), { name: "Default Name" } );
+});
 
 
 module('Form#createFieldset', {
@@ -648,6 +762,16 @@ test('with data-fieldsets placeholder, on outermost element', function() {
   same(form.$el.html(), '<fieldset></fieldset>');
 });
 
+test('with attributes on form element', function() {
+  var form = new Form({
+    attributes: {
+      autocomplete: "off"
+    },
+    schema: { name: 'Text', password: 'Password' }
+  }).render();
+  same(form.$el.attr("autocomplete"), "off");
+});
+
 
 
 module('Form#validate');
@@ -689,17 +813,17 @@ test('returns model validation errors by default', function() {
 
 test('skips model validation if { skipModelValidate: true } is passed', function() {
   var model = new Backbone.Model();
-  
+
   model.validate = function() {
     return 'ERROR';
   };
-  
+
   var form = new Form({
     model: model
   });
-  
+
   var err = form.validate({ skipModelValidate: true });
-  
+
   same(err, null);
 });
 
@@ -734,23 +858,23 @@ test('does not return  model validation errors by default', function() {
   });
 
   var err = form.commit();
-  
+
   same(err, undefined);
 });
 
 test('returns model validation errors when { validate: true } is passed', function() {
   var model = new Backbone.Model();
-  
+
   model.validate = function() {
     return 'ERROR';
   };
-  
+
   var form = new Form({
     model: model
   });
-  
+
   var err = form.commit({ validate: true });
-  
+
   same(err._others, ['ERROR']);
 });
 

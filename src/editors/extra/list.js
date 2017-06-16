@@ -2,7 +2,7 @@
 
   /**
    * List editor
-   * 
+   *
    * An array editor. Creates a list of other editor items.
    *
    * Special options:
@@ -14,7 +14,7 @@
     events: {
       'click [data-action="add"]': function(event) {
         event.preventDefault();
-        this.addItem(null, true);
+        this.addItem(undefined, true);
       }
     },
 
@@ -28,7 +28,11 @@
       var schema = this.schema;
       if (!schema) throw new Error("Missing required option 'schema'");
 
-      this.template = options.template || this.constructor.template;
+      this.schema = _.extend({
+        addLabel: 'Add'
+      }, schema);
+
+      this.template = options.template || schema.listTemplate || this.constructor.template;
 
       //Determine the editor to use
       this.Editor = (function() {
@@ -41,8 +45,10 @@
         if (editors.List[type]) return editors.List[type];
 
         //Or whichever was passed
-        return editors[type];
+        return (_.isString(type)) ? editors[type] : type;
       })();
+
+      this.ListItem = schema.itemClass || editors.List.Item;
 
       this.items = [];
     },
@@ -53,14 +59,19 @@
           $ = Backbone.$;
 
       //Create main element
-      var $el = $($.trim(this.template()));
+      var $el = $($.trim(this.template({
+        addLabel: this.schema.addLabel
+      })));
 
       //Store a reference to the list (item container)
       this.$list = $el.is('[data-items]') ? $el : $el.find('[data-items]');
 
+      if (value instanceof Backbone.Collection) {
+        value = value.toJSON();
+      }
       //Add existing items
       if (value.length) {
-        _.each(value, function(itemValue) {
+        _.each(value, function addItem(itemValue) {
           self.addItem(itemValue);
         });
       }
@@ -70,13 +81,27 @@
         if (!this.Editor.isAsync) this.addItem();
       }
 
+      this._checkMaxCardinalityReached($el);
+
       this.setElement($el);
       this.$el.attr('id', this.id);
       this.$el.attr('name', this.key);
-            
+
       if (this.hasFocus) this.trigger('blur', this);
-      
+
       return this;
+    },
+
+    /**
+     * If number of items exceeds the maxListLength value set on the schema,
+     * hide any 'add' button in the passed in $element
+     *
+     * @param {jQuery selector} [$el] Where to look for the add button
+     */
+    _checkMaxCardinalityReached: function($el) {
+      if (this.schema.maxListLength && this.items.length >= this.schema.maxListLength) {
+        $el.find('button[data-action="add"]').hide();
+      }
     },
 
     /**
@@ -89,7 +114,7 @@
           editors = Form.editors;
 
       //Create the item
-      var item = new editors.List.Item({
+      var item = new this.ListItem({
         list: this,
         form: this.form,
         schema: this.schema,
@@ -97,11 +122,13 @@
         Editor: this.Editor,
         key: this.key
       }).render();
-      
+
       var _addItem = function() {
         self.items.push(item);
         self.$list.append(item.el);
-        
+
+        self._checkMaxCardinalityReached(self.$el);
+
         item.editor.on('all', function(event) {
           if (event === 'change') return;
 
@@ -135,11 +162,11 @@
             self.trigger('blur', self);
           }, 0);
         }, self);
-        
+
         if (userInitiated || value) {
           item.addEventTriggered = true;
         }
-        
+
         if (userInitiated) {
           self.trigger('add', self, item.editor);
           self.trigger('change', self);
@@ -156,7 +183,7 @@
         _addItem();
         item.editor.focus();
       }
-      
+
       return item;
     },
 
@@ -173,13 +200,18 @@
 
       this.items[index].remove();
       this.items.splice(index, 1);
-      
+
       if (item.addEventTriggered) {
         this.trigger('remove', this, item.editor);
         this.trigger('change', this);
       }
 
       if (!this.items.length && !this.Editor.isAsync) this.addItem();
+
+      // show the "add" button in case the max-length has not been reached
+      if (this.schema.maxListLength && this.items.length < this.schema.maxListLength) {
+        this.$el.find('button[data-action="add"]').show();
+      }
     },
 
     getValue: function() {
@@ -195,18 +227,18 @@
       this.value = value;
       this.render();
     },
-    
+
     focus: function() {
       if (this.hasFocus) return;
 
       if (this.items[0]) this.items[0].editor.focus();
     },
-    
+
     blur: function() {
       if (!this.hasFocus) return;
 
       var focusedItem = _.find(this.items, function(item) { return item.editor.hasFocus; });
-      
+
       if (focusedItem) focusedItem.editor.blur();
     },
 
@@ -218,14 +250,13 @@
 
       Form.editors.Base.prototype.remove.call(this);
     },
-    
+
     /**
      * Run validation
-     * 
+     *
      * @return {Object|Null}
      */
     validate: function() {
-      if (!this.validators) return null;
 
       //Collect errors
       var errors = _.map(this.items, function(item) {
@@ -251,7 +282,7 @@
     template: _.template('\
       <div>\
         <div data-items></div>\
-        <button type="button" data-action="add">Add</button>\
+        <button type="button" data-action="add"><%= addLabel %></button>\
       </div>\
     ', null, Form.templateSettings)
 
@@ -295,7 +326,7 @@
 
     render: function() {
       var $ = Backbone.$;
-      
+
       //Create editor
       this.editor = new this.Editor({
         key: this.key,
@@ -313,7 +344,7 @@
 
       //Replace the entire element so there isn't a wrapper tag
       this.setElement($el);
-        
+
       return this;
     },
 
@@ -324,11 +355,11 @@
     setValue: function(value) {
       this.editor.setValue(value);
     },
-    
+
     focus: function() {
       this.editor.focus();
     },
-    
+
     blur: function() {
       this.editor.blur();
     },
@@ -344,6 +375,10 @@
           formValues = this.list.form ? this.list.form.getValue() : {},
           validators = this.schema.validators,
           getValidator = this.getValidator;
+
+      if (this.editor.nestedForm && this.editor.nestedForm.validate) {
+        return this.editor.nestedForm.validate();
+      }
 
       if (!validators) return null;
 
@@ -397,7 +432,7 @@
 
 
   /**
-   * Base modal object editor for use with the List editor; used by Object 
+   * Base modal object editor for use with the List editor; used by Object
    * and NestedModal list types
    */
   Form.editors.List.Modal = Form.editors.Base.extend({
@@ -416,9 +451,9 @@
      */
     initialize: function(options) {
       options = options || {};
-      
+
       Form.editors.Base.prototype.initialize.call(this, options);
-      
+
       //Dependencies
       if (!Form.editors.List.Modal.ModalAdapter) throw new Error('A ModalAdapter is required');
 
@@ -467,7 +502,7 @@
      * Function which returns a generic string representation of an object
      *
      * @param {Object} value
-     * 
+     *
      * @return {String}
      */
     itemToString: function(value) {
@@ -504,7 +539,7 @@
 
       //If there's a specified toString use that
       if (schema.itemToString) return schema.itemToString(value);
-      
+
       //Otherwise use the generic method or custom overridden method
       return this.itemToString(value);
     },
@@ -529,7 +564,7 @@
       this.trigger('focus', this);
 
       modal.on('cancel', this.onModalClosed, this);
-      
+
       modal.on('ok', _.bind(this.onModalSubmitted, this));
     },
 
@@ -553,7 +588,7 @@
       this.renderSummary();
 
       if (isNew) this.trigger('readyToAdd');
-      
+
       this.trigger('change', this);
 
       this.onModalClosed();
@@ -577,16 +612,16 @@
     setValue: function(value) {
       this.value = value;
     },
-    
+
     focus: function() {
       if (this.hasFocus) return;
 
       this.openEditor();
     },
-    
+
     blur: function() {
       if (!this.hasFocus) return;
-      
+
       if (this.modal) {
         this.modal.trigger('cancel');
       }
@@ -601,7 +636,7 @@
     //Defaults to BootstrapModal (http://github.com/powmedia/backbone.bootstrap-modal)
     //Can be replaced with another adapter that implements the same interface.
     ModalAdapter: Backbone.BootstrapModal,
-    
+
     //Make the wait list for the 'ready' event before adding the item to the list
     isAsync: true
   });
@@ -644,7 +679,7 @@
 
       //If there's a specified toString use that
       if (schema.itemToString) return schema.itemToString(value);
-      
+
       //Otherwise use the model
       return new (schema.model)(value).toString();
     }

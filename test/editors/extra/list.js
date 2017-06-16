@@ -7,6 +7,7 @@ module('List', {
 
     teardown: function() {
         this.sinon.restore();
+        $('#qunit-fixture').remove('.length-test')
     }
 });
 
@@ -21,7 +22,7 @@ var same = deepEqual;
             slug: 'danger-zone',
             weapons: ['uzi', '9mm', 'sniper rifle']
         },
-        
+
         schema: {
             title:      { type: 'Text' },
             content:    { type: 'TextArea' },
@@ -47,6 +48,14 @@ var same = deepEqual;
         same(list.Editor, editors.List.Object);
     });
 
+    test('Uses custom list template if defined', function() {
+        var list = new List({
+            schema: { listTemplate: _.template('<div>Custom<div/>') }
+        });
+
+        same(list.template(), '<div>Custom<div/>');
+    });
+
     test('Uses regular editor if there is no list version', function() {
         var list = new List({
             schema: { itemType: 'Number' }
@@ -68,6 +77,98 @@ var same = deepEqual;
         }).render();
 
         same(list.getValue(), [1,2,3]);
+    });
+
+    test('Add label default value', function() {
+        var list = new List().render();
+
+        same(list.$('[data-action="add"]').text(), 'Add');
+    });
+
+    test('Add label can be customized', function() {
+        var list = new List({
+            schema: { addLabel: 'Agregar' }
+        }).render();
+
+        same(list.$('[data-action="add"]').text(), 'Agregar');
+    });
+
+    test('length: Add button is hidden if maxListLength is reached', function() {
+        var maxLength = 10;
+        var list = new List({
+            schema: { maxListLength: maxLength }
+        }).render();
+
+        $('#qunit-fixture').append(list.el);
+
+        same(list.$('[data-action="add"]').is(':visible'), true);
+
+        for(var i = 1;i < maxLength;i++) {
+            list.addItem('foo_' + i);
+        }
+
+        same(list.items.length, maxLength);
+
+        same(list.$('[data-action="add"]').is(':visible'), false);
+    });
+
+    test('Uses Backbone.$ not global', function() {
+      var old$ = window.$,
+        exceptionCaught = false;
+
+      window.$ = null;
+
+      try {
+        var editor = new List({
+          schema: { itemType: 'Number' },
+          value: [1,2,3]
+        }).render();
+      } catch(e) {
+        exceptionCaught = true;
+      }
+
+      window.$ = old$;
+
+      ok(!exceptionCaught, ' using global \'$\' to render');
+    });
+
+    function createListWithMaxItems(maxLength) {
+        var items = [];
+        for(var i = 0;i < maxLength;i++) {
+            items.push('foo_' + i);
+        }
+
+        var list = new List({
+            className: 'length-test',
+            schema: { maxListLength: maxLength },
+            value: items
+        }).render();
+
+        $('#qunit-fixture').append(list.el);
+
+        same(list.items.length, maxLength);
+
+        same(list.$('[data-action="add"]').is(':visible'), false);
+
+        return list;
+    }
+
+    test('length: Add button is hidden if initial items >= maxListLength', function() {
+        var maxLength = 10;
+
+        createListWithMaxItems(maxLength);
+    });
+
+    test('length: Add button is shown again if num items < maxListLength', function() {
+        var maxLength = 10;
+
+        var list = createListWithMaxItems(maxLength);
+
+        for(i = 1;i < maxLength / 2;i++) {
+            list.removeItem(list.items[i]);
+        }
+
+        same(list.$('[data-action="add"]').is(':visible'), true);
     });
 
     test('Value from model', function() {
@@ -119,7 +220,17 @@ var same = deepEqual;
         same(list.items.length, 1);
 
         list.$('[data-action="add"]').click();
-        
+
+        same(list.items.length, 2);
+    });
+
+    test('event: clicking something with data-action="add" adds an item', function() {
+        var list = new List().render();
+
+        same(list.items.length, 1);
+
+        list.$('[data-action="add"]').click();
+
         same(list.items.length, 2);
     });
 
@@ -131,16 +242,40 @@ var same = deepEqual;
         ok(list.$list.hasClass('customList'));
     });
 
-    test('render() - creates items for each item in value array', function() {
-        var list = new List({
-            value: [1,2,3]
-        });
-
+    function testItemCreate(list, values) {
         same(list.items.length, 0);
 
         list.render();
 
         same(list.items.length, 3);
+
+        same(values, _.map(list.items, 'value'));
+    }
+
+    test('render() - creates items for each item in value array', function() {
+        var values = [1,2,3];
+
+        var list = new List({
+            schema: { itemType: 'Number' },
+            value: values
+        });
+
+        testItemCreate(list, values);
+    });
+
+    test('render() - creates items for each item in value collection', function() {
+        var values = [
+            { value: 1 },
+            { value: 2 },
+            { value: 3 }
+        ];
+        var list = new List({
+            schema: { itemType: 'Number' },
+            key: 'value',
+            value: new Backbone.Collection(values)
+        });
+
+        testItemCreate(list, values);
     });
 
     test('render() - creates an initial empty item for empty array', function() {
@@ -162,7 +297,7 @@ var same = deepEqual;
             form: form
         }).render();
 
-        var spy = this.sinon.spy(List, 'Item');
+        var spy = this.sinon.spy(editors.List.Item.prototype, 'initialize');
 
         list.addItem();
 
@@ -185,14 +320,52 @@ var same = deepEqual;
         same(actualOptions, expectedOptions);
     });
 
+    test('addItem() - with no value and a defaultValue on the itemType', function() {
+        var form = new Form();
+
+        editors.defaultValue = editors.Text.extend({
+            defaultValue: 'defaultValue'
+        });
+
+        var list = new List({
+            form: form,
+            schema: {
+                itemType: "defaultValue"
+            }
+        }).render();
+
+        var spy = this.sinon.spy(editors.List.Item.prototype, 'initialize');
+
+        list.addItem();
+
+        var expectedOptions = {
+            form: form,
+            list: list,
+            schema: list.schema,
+            value: undefined,
+            Editor: editors.defaultValue,
+            key: list.key
+        };
+
+        var actualOptions = spy.lastCall.args[0];
+
+        same(spy.callCount, 1);
+        same(list.items.length, 2);
+        same(_.last(list.items).editor.value, 'defaultValue');
+        same(_.last(list.items).getValue(), 'defaultValue');
+
+        //Test options
+        same(actualOptions, expectedOptions);
+    });
+
     test('addItem() - with value', function() {
         var form = new Form();
-        
+
         var list = new List({
             form: form
         }).render();
 
-        var spy = this.sinon.spy(List, 'Item');
+        var spy = this.sinon.spy(editors.List.Item.prototype, 'initialize');
 
         list.addItem('foo');
 
@@ -242,7 +415,7 @@ var same = deepEqual;
 
     test('addItem() - sets editor focus if editor is not isAsync', function() {
         var list = new List().render();
-        
+
         this.sinon.spy(list.Editor.prototype, 'focus');
 
         list.addItem();
@@ -308,7 +481,7 @@ var same = deepEqual;
         //And item was removed
         same(list.items.length, 1, 'Removed item');
     });
-    
+
     test("focus() - gives focus to editor and its first item's editor", function() {
         var field = new List({
             model: new Post,
@@ -320,7 +493,7 @@ var same = deepEqual;
 
         ok(field.items[0].editor.hasFocus);
         ok(field.hasFocus);
-        
+
         field.remove();
     });
 
@@ -403,7 +576,7 @@ var same = deepEqual;
         ok(spy.called);
         ok(spy.calledWith(field));
     });
-    
+
     test("'change' event - is triggered when an item is added", function() {
         var field = new List({
             model: new Post,
@@ -411,7 +584,7 @@ var same = deepEqual;
         }).render();
 
         var spy = this.sinon.spy();
-        
+
         field.on('change', spy);
 
         var item = field.addItem(null, true);
@@ -419,7 +592,7 @@ var same = deepEqual;
         ok(spy.called);
         ok(spy.calledWith(field));
     });
-    
+
     test("'change' event - is triggered when an item is removed", function() {
         var field = new List({
             model: new Post,
@@ -427,7 +600,7 @@ var same = deepEqual;
         }).render();
 
         var spy = this.sinon.spy();
-        
+
         var item = field.items[0];
 
         field.on('change', spy);
@@ -542,7 +715,7 @@ var same = deepEqual;
             start();
         }, 0);
     });
-    
+
     test("'add' event - is triggered when an item is added", function() {
         var field = new List({
             model: new Post,
@@ -550,7 +723,7 @@ var same = deepEqual;
         }).render();
 
         var spy = this.sinon.spy();
-        
+
         field.on('add', spy);
 
         var item = field.addItem(null, true);
@@ -558,7 +731,7 @@ var same = deepEqual;
         ok(spy.called);
         ok(spy.calledWith(field, item.editor));
     });
-    
+
     test("'remove' event - is triggered when an item is removed", function() {
         var field = new List({
             model: new Post,
@@ -617,7 +790,7 @@ module('List.Item', {
       var CustomItem = List.Item.extend({}, {
         template: constructorTemplate
       });
-      
+
       //Options
       var item = new CustomItem({
         template: optionsTemplate,
@@ -793,7 +966,7 @@ module('List.Modal', {
         this.editor = new editors.List.Modal({
             form: new Form()
         });
-        
+
         //Force nestedSchema because this is usually done by Object or NestedModel constructors
         this.editor.nestedSchema = {
             id: { type: 'Number' },
@@ -1272,6 +1445,30 @@ test('initialize() - sets the nestedSchema, when schema is function', function()
     });
 
     deepEqual(_.keys(editor.nestedSchema), ['id', 'name']);
+});
+
+
+test('Check validation of list nested models', function() {
+
+    //Save proto for restoring after the test otherwise next fails alternately.
+    var tmpNestedModel = Backbone.Form.editors.List.NestedModel;
+
+     Backbone.Form.editors.List.NestedModel = Backbone.Form.editors.NestedModel;
+     var NestedModel = Backbone.Model.extend({
+       schema: {
+         name: { validators: ['required']},
+      }
+     });
+     var schema = {
+       nestedModelList: { type: 'List', itemType: 'NestedModel', model: NestedModel }
+     };
+     var form = new Backbone.Form({
+       schema: schema,
+     }).render();
+
+     Backbone.Form.editors.List.NestedModel = tmpNestedModel;
+
+     deepEqual(_.keys(form.validate().nestedModelList.errors[0]), ['name']);
 });
 
 test('getStringValue() - uses model.toString() if available', function() {

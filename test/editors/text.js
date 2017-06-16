@@ -21,6 +21,32 @@
     equal($(editor.el).attr('type'), 'tel');
   });
 
+  test("previousValue should equal initial value", function() {
+    var editor = new Editor({
+      value: 'Test'
+    }).render();
+
+    equal(editor.previousValue, 'Test');
+  });
+
+  test('Uses Backbone.$ not global', function() {
+    var old$ = window.$,
+      exceptionCaught = false;
+
+    window.$ = null;
+
+    try {
+      var editor = new Editor({
+        value: 'Test'
+      }).render();
+    } catch(e) {
+      exceptionCaught = true;
+    }
+
+    window.$ = old$;
+
+    ok(!exceptionCaught, ' using global \'$\' to render');
+  });
 
 
   module('Text#getValue()');
@@ -74,6 +100,14 @@
     equal($(editor.el).val(), 'foobar');
   });
 
+  test("previousValue should equal set value", function() {
+    var editor = new Editor().render();
+
+    editor.setValue('Test');
+
+    equal(editor.previousValue, 'Test');
+  });
+
 
 
   module('Text#focus', {
@@ -89,7 +123,7 @@
 
     teardown: function() {
       this.sinon.restore();
-      
+
       //Remove the editor from the page
       this.editor.remove();
     }

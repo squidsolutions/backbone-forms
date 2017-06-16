@@ -146,7 +146,27 @@ test('fourth, uses template defined on constructor', function() {
   same(field.template, constructorTemplate);
 });
 
+test('Uses Backbone.$ not global', function() {
+  var old$ = window.$,
+    exceptionCaught = false;
 
+  window.$ = null;
+
+  try {
+     var options = {
+        key: 'title',
+        schema: { type: 'Text', title: 'Title' }
+      };
+
+      var field = new Field(options).render();
+  } catch(e) {
+    exceptionCaught = true;
+  }
+
+  window.$ = old$;
+
+  ok(!exceptionCaught, ' using global \'$\' to render');
+});
 
 module('Field#createSchema');
 
@@ -628,10 +648,24 @@ test('If disable method does not exist on editor, disable all inputs inside it',
 
   field.disable();
 
-  same(field.$("input").is(":disabled"),true);
+  same(field.$(":input").is(":disabled"),true);
 });
 
+test('Will disable all inputs inside editor by default', function() {
+  var field = new Field({ key: 'title',
+    schema: {
+      type: 'DateTime',
+      value: Date.now()
+    }
+  });
 
+  field.render();
+
+  field.disable();
+
+  same(field.$("select").is(":disabled"),true);
+  same(field.$("input").is(":disabled"),true);
+});
 
 module('Field#enable', {
   setup: function() {
@@ -662,12 +696,30 @@ test('Calls enable on editor if method exists', function() {
 test('If enable method does not exist on editor, enable all inputs inside it', function() {
   var field = new Field({ key: 'title' });
 
-  field.$("input").attr("disabled",true);
+  field.$(":input").attr("disabled",true);
 
   field.render();
 
   field.enable();
 
+  same(field.$(":input").is(":disabled"),false);
+});
+
+test('Will enable all inputs inside editor by default', function() {
+  var field = new Field({ key: 'title',
+    schema: {
+      type: 'DateTime',
+      value: Date.now()
+    }
+  });
+
+  field.$(":input").attr("disabled",true);
+
+  field.render();
+
+  field.enable();
+
+  same(field.$("select").is(":disabled"),false);
   same(field.$("input").is(":disabled"),false);
 });
 
