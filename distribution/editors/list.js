@@ -29,7 +29,8 @@
       if (!schema) throw new Error("Missing required option 'schema'");
 
       this.schema = _.extend({
-        addLabel: 'Add'
+        addLabel: 'Add',
+        errorMessage: 'Some of the items in the list failed validation'
       }, schema);
 
       this.template = options.template || schema.listTemplate || this.constructor.template;
@@ -270,7 +271,7 @@
       //If so create a shared error
       var fieldError = {
         type: 'list',
-        message: 'Some of the items in the list failed validation',
+        message: this.schema.errorMessage,
         errors: errors
       };
 
